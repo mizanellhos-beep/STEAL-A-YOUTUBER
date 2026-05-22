@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>🎮 Steal The Youtubers!</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            font-family: Arial, black;
+            color: white;
+        }
+        h1 {
+            font-size: 28px;
+            color: #FFD700;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 10px #ff0000;
+        }
+        #hud {
+            display: flex;
+            gap: 40px;
+            margin-bottom: 10px;
+            font-size: 20px;
+            font-weight: bold;
+        }
+        #score { color: #FFD700; }
+        #timer { color: #FF4444; }
+        #stolen { color: #44FF44; }
+        canvas {
+            border: 4px solid #FFD700;
+            border-radius: 10px;
+            box-shadow: 0 0 30px #FFD700;
+        }
+        #controls {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #aaa;
+        }
+        #gameOver {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85);
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            z-index: 999;
+        }
+        #gameOver h2 {
+            font-size: 50px;
+            color: #FFD700;
+            margin-bottom: 20px;
+        }
+        #gameOver p {
+            font-size: 28px;
+            color: white;
+            margin-bottom: 30px;
+        }
+        #restartBtn {
+            padding: 15px 40px;
+            font-size: 22px;
+            background: #FFD700;
+            color: black;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        #restartBtn:hover { background: #ff9900; }
+    </style>
+</head>
+<body>
+
+<h1>🎬 STEAL THE YOUTUBERS!</h1>
+
+<div id="hud">
+    <span id="score">⭐ Score: 0</span>
+    <span id="timer">⏱️ Time: 5:00</span>
+    <span id="stolen">🎬 Stolen: 0</span>
+</div>
+
+<canvas id="gameCanvas" width="700" height="500"></canvas>
+
+<div id="controls">🎮 Use Arrow Keys or WASD to move | Touch Youtubers to steal!</div>
+
+<!-- Game Over Screen -->
+<div id="gameOver">
+    <h2>🏁 GAME OVER!</h2>
+    <p id="finalScore">Your Score: 0</p>
+    <p id="finalStolen">Youtubers Stolen: 0</p>
+    <button id="restartBtn" onclick="restartGame()">🔄 Play Again</button>
+</div>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+// =====================
+// ⚙️ SETTINGS
+// =====================
+const MAP_W = 700;
+const MAP_H = 500;
+const YOUTUBER_COUNT = 30;
+const GAME_DURATION = 300;
+
+// =====================
+// 👤 PLAYER
+// =====================
+let player = {
+    x: MAP_W / 2,
+    y: MAP_H / 2,
+    size: 24,
+    speed: 4,
+    color: "#FF4444",
+    score: 0,
+    stolen: 0
+};
+
+// =====================
+// 🎬 YOUTUBERS
+// =====================
+const ytNames = [
+    "MrBeast","PewDiePie","Markiplier","Ninja",
+    "Dream","Technoblade","DanTDM","Flamingo",
+    "Jacksepticeye","Valkyrae","Pokimane","xQc",
+    "LazarBeam","Preston","Ssundee","Shroud"
+];
+
+const ytColors = [
+    "#FF6B6B","#FF9F43","#FECA57","#48DBFB",
+    "#FF9FF3","#54A0FF","#5F27CD","#00D2D3",
+    "#1DD1A1","#C8D6E5","#EE5A24","#009432"
+];
+
+let youtubers = [];
+
+function createYoutuber() {
+    return {
+        x: Math.random() * (MAP_W - 80) + 40,
+        y: Math.random() * (MAP_H - 80) + 40,
+        size: 20,
+        name: ytNames[Math.floor(Math.random() * ytNames.length)],
+        color: ytColors[Math.floor(Math.random() * ytColors.length)],
+        speedX: (Math.random() - 0.5) * 2,
+        speedY: (Math.random() - 0.5) * 2
+    };
+}
+
+function initYoutubers() {
+    youtubers = [];
+    for (let i = 0; i < YOUTUBER_COUNT; i++) {
+        youtubers.push(createYoutuber());
+    }
+}
+
+// =====================
+// ⌨️ CONTROLS
+// =====================
+const keys = {};
+document.addEventListener("keydown", e => keys[e.key] = true);
+document.addEventListener("keyup", e => keys[e.key] = false);
+
+// =====================
+// ⏱️ TIMER
+// =====================
+let timeLeft = GAME_DURATION;
+let gameRunning = true;
+
+let timerInterval = setInterval(() => {
+    if (!gameRunning) return;
+    timeLeft--;
+    updateHUD();
+    if (timeLeft <= 0) endGame();
+}, 1000);
+
+function updateHUD() {
+    document.getElementById("score").textContent = "⭐ Score: " + player.score;
+    document.getElementById("stolen").textContent = "🎬 Stolen: " + player.stolen;
+    let mins = Math.floor(timeLeft / 60);
+    let secs = timeLeft % 60;
+    document.getElementById("timer").textContent =
+        "⏱️ " + mins + ":" + (secs < 10 ? "0" : "") + secs;
+}
+
+// =====================
+// 🎮 GAME LOOP
+// =====================
+function update() {
+    if (!gameRunning) return;
+
+    // Move player
+    if ((keys["ArrowLeft"] || keys["a"]) && player.x > player.size)
+        player.x -= player.speed;
+    if ((keys["ArrowRight"] || keys["d"]) && player.x < MAP_W - player.size)
+        player.x += player.speed;
+    if ((keys["ArrowUp"] || keys["w"]) && player.y > player.size)
+        player.y -= player.speed;
+    if ((keys["ArrowDown"] || keys["s"]) && player.y < MAP_H - player.size)
+        player.y += player.speed;
+
+    // Move youtubers
+    youtubers.forEach(yt => {
+        yt.x += yt.speedX;
+        yt.y += yt.speedY;
+        if (yt.x < yt.size || yt.x > MAP_W - yt.size) yt.speedX *= -1;
+        if (yt.y < yt.size || yt.y > MAP_H - yt.size) yt.speedY *= -1;
+
+        // Check collision with player
+        let dx = player.x - yt.x;
+        let dy = player.y - yt.y;
+        let dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < player.size + yt.size) {
+            player.score += 10;
+            player.stolen += 1;
+            updateHUD();
+            // Replace with new youtuber
+            let idx = youtubers.indexOf(yt);
+            youtubers[idx] = createYoutuber();
+        }
+    });
+}
+
+function draw() {
+    // Background
+    ctx.fillStyle = "#2d5016";
+    ctx.fillRect(0, 0, MAP_W, MAP_H);
+
+    // Grid lines
+    ctx.strokeStyle = "rgba(255,255,255,0.05)";
+    for (let i = 0; i < MAP_W; i += 50) {
+        ctx.beginPath();
+        ctx.moveTo(i, 0);
+        ctx.lineTo(i, MAP_H);
+        ctx.stroke();
+    }
+    for (let i = 0; i < MAP_H; i += 50) {
+        ctx.beginPath();
+        ctx.moveTo(0, i);
+        ctx.lineTo(MAP_W, i);
+        ctx.stroke();
+    }
+
+    // Draw youtubers
+    youtubers.forEach(yt => {
+        // Body
+        ctx.fillStyle = yt.color;
+        ctx.fillRect(yt.x - 12, yt.y - 10, 24, 30);
+
+        // Head
+        ctx.fillStyle = "#FFD700";
+        ctx.beginPath();
+        ctx.arc(yt.x, yt.y - 20, 15, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Eyes
+        ctx.fillStyle = "black";
+        ctx.beginPath();
+        ctx.arc(yt.x - 5, yt.y - 22, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(yt.x + 5, yt.y - 22, 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Name
+        ctx.fillStyle = "white";
+        ctx.font = "bold 10px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText("🎬 " + yt.name, yt.x, yt.y - 38);
+    });
+
+    // Draw player
+    ctx.fillStyle = player.color;
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, player.size, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "white";
+    ctx.font = "bold 12px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText("YOU", player.x, player.y + 4);
+
+    // Player glow
+    ctx.strokeStyle = "#FFD700";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, player.size + 3, 0, Math.PI * 2);
+    ctx.stroke();
+}
+
+function gameLoop() {
+    update();
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+// =====================
+// 🏁 GAME OVER
+// =====================
+function endGame() {
+    gameRunning = false;
+    clearInterval(timerInterval);
+    document.getElementById("finalScore").textContent =
+        "⭐ Your Score: " + player.score;
+    document.getElementById("finalStolen").textContent =
+        "🎬 Youtubers Stolen: " + player.stolen;
+    document.getElementById("gameOver").style.display = "flex";
+}
+
+function restartGame() {
+    player.x = MAP_W / 2;
+    player.y = MAP_H / 2;
+    player.score = 0;
+    player.stolen = 0;
+    timeLeft = GAME_DURATION;
+    gameRunning = true;
+    document.getElementById("gameOver").style.display = "none";
+    initYoutubers();
+    timerInterval = setInterval(() => {
+        if (!gameRunning) return;
+        timeLeft--;
+        updateHUD();
+        if (timeLeft <= 0) endGame();
+    }, 1000);
+}
+
+// =====================
+// 🚀 START GAME
+// =====================
+initYoutubers();
+updateHUD();
+gameLoop();
+</script>
+</body>
+</html>
